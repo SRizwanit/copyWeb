@@ -1,0 +1,97 @@
+name: Copy pdf2tex.blogspot.com
+
+on:
+  workflow_dispatch:        # Actions ট্যাব থেকে ম্যানুয়ালি চালানো যাবে
+  schedule:
+    - cron: "0 0 * * 0"     # প্রতি রবিবার স্বয়ংক্রিয়ভাবে (দরকার না হলে মুছে দিন)
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+env:
+  SITE_URL: https://pdf2tex.blogspot.com
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install wget
+        run: sudo apt-get update && sudo apt-get install -y wget zip
+
+      - name: Download full website
+        run: |
+          mkdir -p site
+          cd site
+          wget \
+            --mirror \
+            --convert-links \
+            --adjust-extension \
+            --page-requisites \
+            --no-parent \
+            --span-hosts \
+            --restrict-file-names=windows \
+            --domains=pdf2tex.blogspot.com,blogger.googleusercontent.com,bp.blogspot.com,1.bp.blogspot.com,2.bp.blogspot.com,3.bp.blogspot.com,4.bp.blogspot.com,resources.blogblog.com,fonts.googleapis.com,fonts.gstatic.com,ajax.googleapis.com,cdnjs.cloudflare.com,cdn.jsdelivr.net \
+            --reject-regex '(\?m=1|[?&]m=1|/feeds/|/search\?|showComment|widgetType|/b/post-preview|/b/stats)' \
+            -e robots=off \
+            --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36" \
+            --wait=1 --random-wait \
+            --tries=3 --timeout=30 \
+            --no-verbose \
+            "$SITE_URL/" \
+            "$SITE_URL/sitemap.xml" \
+            "$SITE_URL/sitemap-pages.xml" \
+            || true   # কিছু লিংক 404 হলে ওয়ার্কফ্লো যেন ফেল না করে
+
+      - name: Create root index redirect
+        run: |
+          cat > site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0; url=./pdf2tex.blogspot.com/index.html">
+            <title>Redirecting...</title>
+          </head>
+          <body>
+            <a href="./pdf2tex.blogspot.com/index.html">Click here if not redirected</a>
+          </body>
+          </html>
+          EOF
+          touch site/.nojekyll
+
+      - name: Show summary
+        run: |
+          echo "Total files: $(find site -type f | wc -l)"
+          du -sh site
+
+      - name: Zip the copy
+        run: zip -r pdf2tex-site-copy.zip site > /dev/null
+
+      - name: Upload ZIP as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf2tex-site-copy
+          path: pdf2tex-site-copy.zip
+          retention-days: 30
+
+      - name: Upload for GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: mirror
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
