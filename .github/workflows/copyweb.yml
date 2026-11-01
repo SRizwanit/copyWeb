@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SITE_URL: https://pdf2tex.blogspot.com
+  SITE_URL: https://pdf2tex.blogspot.com/?m=1
 
 jobs:
   mirror:
